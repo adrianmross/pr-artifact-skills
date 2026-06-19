@@ -32,11 +32,20 @@ The publisher blocks public `sbom`, `provenance`, `log`, and `coverage` artifact
 ```sh
 make test
 python3 -m pip install PyYAML  # if the active Python env does not already have it
-python3 /Users/adross/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
+./scripts/validate-plugin.sh
 npx skills add . --list --full-depth --yes
 ```
 
 The E2E test uses a local S3-compatible HTTP mock and does not require cloud credentials.
+
+With direnv/devenv:
+
+```sh
+direnv allow
+devenv test
+devenv tasks run demo:gif
+devenv tasks run release:package
+```
 
 ## Demo GIF
 

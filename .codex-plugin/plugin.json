@@ -1,6 +1,6 @@
 {
   "name": "pr-artifact-skills",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codex skills for publishing local PR artifacts to S3-compatible or OCI object storage.",
   "author": {
     "name": "Adrian Ross",
