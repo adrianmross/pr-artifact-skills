@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Add Screenshot"
+  short_description: "Upload screenshots to PR comments"
+  default_prompt: "Use $pr-add-screenshot to add this screenshot to the PR with the right visibility."

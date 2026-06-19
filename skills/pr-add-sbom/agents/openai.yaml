@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Add SBOM"
+  short_description: "Privately attach SBOM evidence"
+  default_prompt: "Use $pr-add-sbom to attach this SBOM privately and comment with digest metadata."

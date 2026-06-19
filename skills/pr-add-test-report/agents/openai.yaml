@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Add Test Report"
+  short_description: "Upload test reports to PRs"
+  default_prompt: "Use $pr-add-test-report to publish this test report and comment on the PR."
