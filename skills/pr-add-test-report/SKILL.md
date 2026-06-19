@@ -5,7 +5,7 @@ description: Add a local test report, Playwright report, trace bundle, coverage 
 
 # PR Add Test Report
 
-Use this thin skill for test report directories or archives. It delegates to `~/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py`.
+Use this thin skill for test report directories or archives. Prefer the `pr-add-test-report` CLI when installed; otherwise delegate to `~/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py`.
 
 Default behavior:
 
@@ -16,13 +16,11 @@ Default behavior:
 Example:
 
 ```sh
-python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py \
+pr-add-test-report \
   --repo red-wiz/aphrodite \
   --pr 205 \
   --file /path/to/playwright-report \
   --label "Playwright report" \
-  --artifact-type playwright-report \
-  --visibility signed \
   --backend s3 \
   --bucket pr-artifacts \
   --endpoint-url http://127.0.0.1:9000 \

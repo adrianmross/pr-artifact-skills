@@ -34,8 +34,25 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
       - name: Validate
-        run: make test
+        run: make ci
 
       - name: Package
         run: ./scripts/package-release.sh "${{ steps.version.outputs.version }}"

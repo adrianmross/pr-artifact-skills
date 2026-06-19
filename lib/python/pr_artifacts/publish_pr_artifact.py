@@ -11,28 +11,57 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import sys
 import tarfile
 import tempfile
 import urllib.parse
 
-from object_store import (
-    StorageConfig,
-    config_from_args,
-    content_type_for,
-    presigned_get_url,
-    public_url,
-    result_json,
-    run,
-    sha256_file,
-    storage_ref,
-    upload_file,
-)
+try:
+    from .config_file import config_secret, config_value, load_config
+    from .object_store import (
+        StorageConfig,
+        config_from_args,
+        content_type_for,
+        presigned_get_url,
+        public_url,
+        result_json,
+        run,
+        sha256_file,
+        storage_ref,
+        upload_file,
+    )
+except ImportError:
+    from config_file import config_secret, config_value, load_config
+    from object_store import (
+        StorageConfig,
+        config_from_args,
+        content_type_for,
+        presigned_get_url,
+        public_url,
+        result_json,
+        run,
+        sha256_file,
+        storage_ref,
+        upload_file,
+    )
 
 
 SENSITIVE_TYPES = {"sbom", "provenance", "log", "coverage"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+SENSITIVE_NAME_RE = re.compile(
+    r"(^|[._/-])("
+    r"\.env|\.npmrc|\.pypirc|\.netrc|"
+    r"id_rsa|id_dsa|id_ecdsa|id_ed25519|"
+    r"kubeconfig|dockerconfigjson|"
+    r"secret|secrets|credential|credentials|password|passwd|token|private[-_]key"
+    r")($|[._/-])",
+    re.IGNORECASE,
+)
+SENSITIVE_CONTENT_RE = re.compile(
+    r"(BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY|"
+    r"AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|"
+    r"(?i:password|passwd|token|api[_-]?key|secret)\s*[:=]\s*['\"]?[A-Za-z0-9_./+=-]{8,})"
+)
 
 
 def slug(value: str, fallback: str = "artifact") -> str:
@@ -56,6 +85,66 @@ def stage_artifact(source: pathlib.Path, work_dir: pathlib.Path, label: str) -> 
         return archive
 
     raise ValueError(f"Unsupported artifact path: {source}")
+
+
+def privacy_candidates(source: pathlib.Path) -> list[pathlib.Path]:
+    if source.is_file():
+        return [source]
+    if source.is_dir():
+        return [path for path in source.rglob("*") if path.is_file()]
+    return []
+
+
+def enforce_public_privacy(source: pathlib.Path, args: argparse.Namespace) -> None:
+    if args.visibility != "public" or not args.privacy_checks or args.allow_sensitive_public:
+        return
+    if args.artifact_type in SENSITIVE_TYPES:
+        raise ValueError(
+            f"{args.artifact_type} defaults to private. Pass --allow-sensitive-public to publish it publicly."
+        )
+    matches = []
+    for path in privacy_candidates(source):
+        candidate = str(path.relative_to(source) if source.is_dir() else path.name)
+        if SENSITIVE_NAME_RE.search(candidate):
+            matches.append(candidate)
+    if matches:
+        preview = ", ".join(matches[:5])
+        suffix = "" if len(matches) <= 5 else f", and {len(matches) - 5} more"
+        raise ValueError(
+            f"Refusing public upload because artifact path looks sensitive: {preview}{suffix}. "
+            "Use --visibility private, --visibility signed, or pass --allow-sensitive-public intentionally."
+        )
+    content_matches = sensitive_content_matches(source)
+    if content_matches:
+        preview = ", ".join(content_matches[:5])
+        suffix = "" if len(content_matches) <= 5 else f", and {len(content_matches) - 5} more"
+        raise ValueError(
+            f"Refusing public upload because artifact content looks sensitive: {preview}{suffix}. "
+            "Use --visibility private, --visibility signed, or pass --allow-sensitive-public intentionally."
+        )
+
+
+def sensitive_content_matches(source: pathlib.Path) -> list[str]:
+    matches = []
+    for path in privacy_candidates(source)[:100]:
+        try:
+            sample = path.read_bytes()[:65536]
+        except OSError:
+            continue
+        if b"\x00" in sample:
+            continue
+        text = sample.decode("utf-8", "ignore")
+        if SENSITIVE_CONTENT_RE.search(text):
+            matches.append(str(path.relative_to(source) if source.is_dir() else path.name))
+    return matches
+
+
+def enforce_max_size(artifact: pathlib.Path, max_bytes: int) -> None:
+    if max_bytes <= 0:
+        return
+    size = artifact.stat().st_size
+    if size > max_bytes:
+        raise ValueError(f"Artifact is {size} bytes, exceeding --max-bytes {max_bytes}")
 
 
 def build_object_key(prefix: str, repo: str, pr: str, label: str, artifact: pathlib.Path, timestamp: str) -> str:
@@ -186,18 +275,15 @@ def resolve_display_url(config: StorageConfig, args: argparse.Namespace, object_
 
 
 def publish(args: argparse.Namespace) -> dict:
-    if args.artifact_type in SENSITIVE_TYPES and args.visibility == "public" and not args.allow_sensitive_public:
-        raise ValueError(
-            f"{args.artifact_type} defaults to private. Pass --allow-sensitive-public to publish it publicly."
-        )
-
     config = config_from_args(args)
     source = pathlib.Path(args.file).resolve()
+    enforce_public_privacy(source, args)
     timestamp = args.timestamp or dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
     out_dir = pathlib.Path(args.out_dir).resolve() if args.out_dir else pathlib.Path(tempfile.mkdtemp(prefix="pr-add-artifact-"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
     artifact = stage_artifact(source, out_dir, args.label)
+    enforce_max_size(artifact, args.max_bytes)
     object_key = build_object_key(args.prefix, args.repo, args.pr, args.label, artifact, timestamp)
     manifest_key = f"{object_key}.manifest.json"
     artifact_sha = sha256_file(artifact)
@@ -338,17 +424,77 @@ def add_storage_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--secret-access-key", default=os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
     parser.add_argument("--session-token", default=os.environ.get("AWS_SESSION_TOKEN", ""))
     parser.add_argument("--virtual-hosted-style", action="store_true")
+    parser.add_argument("--timeout-seconds", type=int, default=int(os.environ.get("PR_ARTIFACT_TIMEOUT_SECONDS", "30")))
+    parser.add_argument("--retries", type=int, default=int(os.environ.get("PR_ARTIFACT_RETRIES", "2")))
+
+
+CONFIG_OPTIONS = {
+    "backend": ["--backend"],
+    "bucket": ["--bucket"],
+    "namespace": ["--namespace"],
+    "region": ["--region"],
+    "endpoint_url": ["--endpoint-url"],
+    "public_base_url": ["--public-base-url"],
+    "access_key_id": ["--access-key-id"],
+    "secret_access_key": ["--secret-access-key"],
+    "session_token": ["--session-token"],
+    "prefix": ["--prefix"],
+    "retention": ["--retention"],
+    "visibility": ["--visibility"],
+    "artifact_type": ["--artifact-type"],
+    "max_bytes": ["--max-bytes"],
+    "timeout_seconds": ["--timeout-seconds"],
+    "retries": ["--retries"],
+}
+
+
+def option_supplied(argv: list[str], names: list[str]) -> bool:
+    for token in argv:
+        for name in names:
+            if token == name or token.startswith(f"{name}="):
+                return True
+    return False
+
+
+def apply_config(args: argparse.Namespace, argv: list[str]) -> None:
+    config = load_config(args.config, args.profile)
+    if not config:
+        return
+    for attr, option_names in CONFIG_OPTIONS.items():
+        if option_supplied(argv, option_names):
+            continue
+        if attr in {"access_key_id", "secret_access_key", "session_token"}:
+            value = config_secret(config, attr)
+        else:
+            value = config_value(config, attr)
+        if value is None or value == "":
+            continue
+        current = getattr(args, attr)
+        if current in {"", None, "private", "artifact", "pr-artifacts", 0, 2, 30}:
+            setattr(args, attr, coerce_config_value(attr, value))
+
+    privacy_checks = config_value(config, "privacy_checks")
+    if privacy_checks is not None and not option_supplied(argv, ["--privacy-checks", "--no-privacy-checks"]):
+        args.privacy_checks = bool(privacy_checks)
+
+
+def coerce_config_value(attr: str, value):
+    if attr in {"max_bytes", "timeout_seconds", "retries"}:
+        return int(value)
+    return value
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--config", default=os.environ.get("PR_ARTIFACT_CONFIG", ""))
+    parser.add_argument("--profile", default=os.environ.get("PR_ARTIFACT_PROFILE", ""))
     parser.add_argument("--repo", default="")
     parser.add_argument("--pr", default="")
     parser.add_argument("--file", default="")
     parser.add_argument("--label", default="artifact")
     parser.add_argument("--artifact-type", default="artifact")
-    parser.add_argument("--visibility", choices=["private", "signed", "public"], default="private")
+    parser.add_argument("--visibility", choices=["private", "signed", "public"], default=os.environ.get("PR_ARTIFACT_VISIBILITY", "private"))
     add_storage_args(parser)
     parser.add_argument("--prefix", default="pr-artifacts")
     parser.add_argument("--retention", default="")
@@ -358,6 +504,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--signed-ttl-hours", type=int, default=24)
     parser.add_argument("--create-oci-par", action="store_true")
     parser.add_argument("--allow-sensitive-public", action="store_true")
+    parser.add_argument("--privacy-checks", dest="privacy_checks", action="store_true", default=True)
+    parser.add_argument("--no-privacy-checks", dest="privacy_checks", action="store_false")
+    parser.add_argument("--max-bytes", type=int, default=int(os.environ.get("PR_ARTIFACT_MAX_BYTES", "0")))
     parser.add_argument("--timestamp", default="")
     parser.add_argument("--out-dir", default="")
     parser.add_argument("--dry-run", action="store_true")
@@ -366,6 +515,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.self_test:
         return args
+    try:
+        apply_config(args, argv)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     missing = [name for name in ["repo", "pr", "file", "bucket"] if not getattr(args, name)]
     if args.backend == "oci" and not args.namespace:
         missing.append("namespace")
@@ -388,5 +541,34 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def with_defaults(argv: list[str], defaults: list[str]) -> list[str]:
+    result = list(argv)
+    for index in range(0, len(defaults), 2):
+        name = defaults[index]
+        value = defaults[index + 1]
+        if not option_supplied(result, [name]):
+            result = [name, value, *result]
+    return result
+
+
+def cli() -> None:
     raise SystemExit(main(sys.argv[1:]))
+
+
+def cli_screenshot() -> None:
+    argv = with_defaults(sys.argv[1:], ["--artifact-type", "screenshot", "--visibility", "public", "--label", "screenshot"])
+    raise SystemExit(main(argv))
+
+
+def cli_test_report() -> None:
+    argv = with_defaults(sys.argv[1:], ["--artifact-type", "test-report", "--visibility", "signed", "--label", "test-report"])
+    raise SystemExit(main(argv))
+
+
+def cli_sbom() -> None:
+    argv = with_defaults(sys.argv[1:], ["--artifact-type", "sbom", "--visibility", "private", "--label", "sbom"])
+    raise SystemExit(main(argv))
+
+
+if __name__ == "__main__":
+    cli()

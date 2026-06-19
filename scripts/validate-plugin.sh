@@ -13,7 +13,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
   fi
 fi
 
-if [[ -f "$VALIDATOR" ]]; then
+if [[ -f "$VALIDATOR" ]] && "$PYTHON_BIN" -c 'import yaml' >/dev/null 2>&1; then
   "$PYTHON_BIN" "$VALIDATOR" "$ROOT"
   exit 0
 fi
@@ -23,11 +23,38 @@ import json
 import pathlib
 import sys
 
-import yaml
-
 root = pathlib.Path(sys.argv[1])
 manifest_path = root / ".codex-plugin" / "plugin.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def parse_frontmatter(text):
+    result = {}
+    current_key = None
+    for raw_line in text.splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        if raw_line.startswith(" ") and current_key:
+            result[current_key] = f"{result[current_key]} {raw_line.strip()}".strip()
+            continue
+        key, sep, value = raw_line.partition(":")
+        if not sep:
+            continue
+        current_key = key.strip()
+        result[current_key] = value.strip().strip('"').strip("'")
+    return result
+
+
+def parse_nested_keys(text):
+    keys = set()
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        key, sep, _ = line.strip().partition(":")
+        if sep:
+            keys.add(key)
+    return keys
 
 required_manifest = ["name", "version", "description", "author", "skills", "interface"]
 missing = [field for field in required_manifest if field not in manifest]
@@ -51,17 +78,15 @@ for skill_md in sorted(skills_root.glob("*/SKILL.md")):
     end = text.find("\n---", 4)
     if end == -1:
         raise SystemExit(f"{skill_md} frontmatter is not closed")
-    frontmatter = yaml.safe_load(text[4:end])
-    if not isinstance(frontmatter, dict):
-        raise SystemExit(f"{skill_md} frontmatter must be an object")
+    frontmatter = parse_frontmatter(text[4:end])
     for field in ["name", "description"]:
         if not isinstance(frontmatter.get(field), str) or not frontmatter[field].strip():
             raise SystemExit(f"{skill_md} frontmatter field `{field}` must be non-empty")
 
     agent_yaml = skill_md.parent / "agents" / "openai.yaml"
     if agent_yaml.exists():
-        payload = yaml.safe_load(agent_yaml.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict) or not isinstance(payload.get("interface"), dict):
+        payload = parse_nested_keys(agent_yaml.read_text(encoding="utf-8"))
+        if "interface" not in payload:
             raise SystemExit(f"{agent_yaml} must contain interface metadata")
 
 print(f"Plugin fallback validation passed: {root}")

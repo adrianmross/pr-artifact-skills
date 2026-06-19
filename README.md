@@ -18,6 +18,12 @@ Install one skill:
 npx skills add adrianmross/pr-artifact-skills --skill pr-add-screenshot -g -y
 ```
 
+Or install the CLI:
+
+```sh
+python3 -m pip install git+https://github.com/adrianmross/pr-artifact-skills.git
+```
+
 The repo is also a Codex plugin package. Clone it or download a release archive and install from the repo root containing `.codex-plugin/plugin.json`.
 
 ## What It Provides
@@ -30,6 +36,8 @@ The repo is also a Codex plugin package. Clone it or download a release archive 
 Storage defaults to generic S3-compatible APIs for MinIO, RustFS, AWS S3, and similar services. OCI Object Storage is supported when OCI CLI auth is the right path.
 
 Visibility is explicit: `public`, `signed`, or `private`. SBOMs, provenance, logs, and coverage stay private unless public publishing is intentionally overridden.
+
+Optional `.pr-artifacts.yaml` config files remove repeated storage flags; see `examples/`.
 
 ## Test
 

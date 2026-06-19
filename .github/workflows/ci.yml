@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Start MinIO
+        run: |
+          docker run -d \
+            --name pr-artifact-minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            quay.io/minio/minio server /data
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs pr-artifact-minio
+          exit 1
+
+      - name: Create MinIO bucket
+        run: |
+          docker run --rm --network host --entrypoint sh quay.io/minio/mc -c \
+            'mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/pr-artifacts'
+
+      - name: Validate
+        env:
+          PR_ARTIFACT_MINIO_ENDPOINT: http://127.0.0.1:9000
+          PR_ARTIFACT_MINIO_BUCKET: pr-artifacts
+          PR_ARTIFACT_MINIO_ACCESS_KEY: minioadmin
+          PR_ARTIFACT_MINIO_SECRET_KEY: minioadmin
+        run: make ci
+
+      - name: Smoke console scripts
+        run: |
+          pr-add-artifact --self-test
+          pr-add-screenshot --help
+          pr-add-test-report --help
+          pr-add-sbom --help
+          oos --help

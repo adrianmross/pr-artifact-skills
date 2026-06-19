@@ -1,0 +1,12 @@
+# Copy to .pr-artifacts.yaml and set OCI_CLI_AUTH=instance_principal, or use
+# your normal OCI CLI profile environment.
+storage:
+  backend: oci
+  bucket: pr-artifacts
+  namespace: oabcs1
+  region: us-sanjose-1
+defaults:
+  prefix: pr-artifacts
+  visibility: private
+  max_bytes: 104857600
+  privacy_checks: true

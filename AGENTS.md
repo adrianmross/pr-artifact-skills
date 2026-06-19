@@ -19,6 +19,14 @@ Use `--backend s3` for generic S3-compatible object storage, including MinIO, Ru
 
 Use `--backend oci` only when the target is OCI Object Storage and OCI CLI authentication is expected, such as `OCI_CLI_AUTH=instance_principal`.
 
+Copyable config examples live in `examples/`:
+
+- `examples/minio.pr-artifacts.yaml`
+- `examples/rustfs.pr-artifacts.yaml`
+- `examples/oci.pr-artifacts.yaml`
+
+Copy one to `.pr-artifacts.yaml` in a repo and prefer environment-variable indirection for secrets.
+
 ## Visibility Policy
 
 - `public`: screenshots and intentionally public reports only.
@@ -26,6 +34,7 @@ Use `--backend oci` only when the target is OCI Object Storage and OCI CLI authe
 - `private`: default for SBOMs, provenance, logs, coverage, traces, and anything that may contain secrets or customer data.
 
 The publisher blocks public `sbom`, `provenance`, `log`, and `coverage` artifacts unless `--allow-sensitive-public` is explicit.
+It also blocks public uploads when artifact names or text content look like secrets, tokens, credentials, private keys, kubeconfigs, or dotenv files.
 
 ## Local Validation
 
@@ -45,6 +54,12 @@ direnv allow
 devenv test
 devenv tasks run demo:gif
 devenv tasks run release:package
+```
+
+CI-equivalent validation:
+
+```sh
+make ci
 ```
 
 ## Demo GIF

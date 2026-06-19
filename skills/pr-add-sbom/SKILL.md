@@ -5,7 +5,7 @@ description: Add a local SBOM, provenance document, signing evidence, or supply-
 
 # PR Add SBOM
 
-Use this thin skill for SBOM and supply-chain evidence. It delegates to `~/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py`.
+Use this thin skill for SBOM and supply-chain evidence. Prefer the `pr-add-sbom` CLI when installed; otherwise delegate to `~/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py`.
 
 Default behavior:
 
@@ -17,13 +17,11 @@ Default behavior:
 Example:
 
 ```sh
-python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py \
+pr-add-sbom \
   --repo red-wiz/aphrodite \
   --pr 205 \
   --file /path/to/sbom.cdx.json \
   --label "SBOM evidence" \
-  --artifact-type sbom \
-  --visibility private \
   --backend s3 \
   --bucket pr-artifacts \
   --endpoint-url http://127.0.0.1:9000 \

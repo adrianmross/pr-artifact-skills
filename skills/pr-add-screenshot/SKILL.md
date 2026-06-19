@@ -5,7 +5,7 @@ description: Add a local screenshot or image to a GitHub pull request by uploadi
 
 # PR Add Screenshot
 
-Use this thin skill for the easy screenshot path. It delegates to `~/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py`.
+Use this thin skill for the easy screenshot path. Prefer the `pr-add-screenshot` CLI when installed; otherwise delegate to `~/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py`.
 
 Default behavior:
 
@@ -16,13 +16,11 @@ Default behavior:
 Example:
 
 ```sh
-python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py \
+pr-add-screenshot \
   --repo red-wiz/aphrodite \
   --pr 205 \
   --file /path/to/screenshot.png \
   --label "Login screenshot" \
-  --artifact-type screenshot \
-  --visibility public \
   --backend s3 \
   --bucket pr-artifacts \
   --endpoint-url http://127.0.0.1:9000 \

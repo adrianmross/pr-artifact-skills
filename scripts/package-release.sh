@@ -21,6 +21,7 @@ PR Artifact Skills release.
 - OCI Object Storage path for OCI CLI and instance principal environments.
 - Explicit public, signed, and private visibility modes.
 - Reproducible devenv/direnv development shell.
+- First-class Python console scripts, repo config files, CI validation, MinIO integration coverage, and upload guardrails.
 NOTES
 
 printf '%s\n' "${DIST_DIR}/${NAME}.tar.gz"

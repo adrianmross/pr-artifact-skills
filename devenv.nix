@@ -17,6 +17,7 @@ in
     nodejs_22
     python
     ripgrep
+    shellcheck
   ];
 
   enterShell = ''
@@ -53,9 +54,7 @@ in
     '';
 
     "dev:validate".exec = ''
-      devenv tasks run test:unit
-      devenv tasks run plugin:validate
-      devenv tasks run skills:list
+      make ci
     '';
   };
 

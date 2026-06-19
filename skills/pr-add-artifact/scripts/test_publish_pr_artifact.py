@@ -17,12 +17,19 @@ import publish_pr_artifact
 class Store:
     objects: dict[str, bytes] = {}
     headers: dict[str, dict[str, str]] = {}
+    failures_remaining: int = 0
 
 
 class S3LikeHandler(http.server.BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         length = int(self.headers.get("content-length", "0"))
         body = self.rfile.read(length)
+        if Store.failures_remaining > 0:
+            Store.failures_remaining -= 1
+            self.send_response(503)
+            self.end_headers()
+            self.wfile.write(b"try again")
+            return
         Store.objects[self.path] = body
         Store.headers[self.path] = {key.lower(): value for key, value in self.headers.items()}
         self.send_response(200)
@@ -52,6 +59,7 @@ class PublishArtifactTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         Store.objects = {}
         Store.headers = {}
+        Store.failures_remaining = 0
         cls.server = ThreadedServer(("127.0.0.1", 0), S3LikeHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -118,6 +126,134 @@ class PublishArtifactTests(unittest.TestCase):
             manifest = json.loads(Store.objects[manifest_path].decode("utf-8"))
             self.assertEqual(manifest["storage"]["backend"], "s3")
             self.assertEqual(manifest["storage"]["ref"], f"s3://artifacts/{result['objectKey']}")
+
+    def test_config_file_provides_storage_defaults(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="publish-e2e-") as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "screen.png"
+            artifact.write_bytes(b"png")
+            config = root / ".pr-artifacts.yaml"
+            config.write_text(
+                "\n".join(
+                    [
+                        "storage:",
+                        "  backend: s3",
+                        "  bucket: artifacts",
+                        "  region: us-east-1",
+                        f"  endpoint_url: {self.endpoint}",
+                        "  access_key_id: minioadmin",
+                        "  secret_access_key: minioadmin",
+                        "defaults:",
+                        "  visibility: public",
+                        "  prefix: configured",
+                        "  max_bytes: 100",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            args = publish_pr_artifact.parse_args(
+                [
+                    "--config",
+                    str(config),
+                    "--repo",
+                    "red-wiz/aphrodite",
+                    "--pr",
+                    "205",
+                    "--file",
+                    str(artifact),
+                    "--label",
+                    "configured screenshot",
+                    "--artifact-type",
+                    "screenshot",
+                    "--timestamp",
+                    "20260619T000000Z",
+                    "--dry-run",
+                    "--out-dir",
+                    str(root / "out"),
+                ]
+            )
+            result = publish_pr_artifact.publish(args)
+            self.assertEqual(result["backend"], "s3")
+            self.assertEqual(result["visibility"], "public")
+            self.assertTrue(result["objectKey"].startswith("configured/"))
+
+    def test_retry_succeeds_after_transient_s3_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="publish-e2e-") as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "screen.png"
+            artifact.write_bytes(b"retry")
+            Store.failures_remaining = 1
+            args = publish_pr_artifact.parse_args(
+                [
+                    "--repo",
+                    "red-wiz/aphrodite",
+                    "--pr",
+                    "205",
+                    "--file",
+                    str(artifact),
+                    "--label",
+                    "retry",
+                    "--artifact-type",
+                    "screenshot",
+                    "--visibility",
+                    "public",
+                    "--backend",
+                    "s3",
+                    "--bucket",
+                    "artifacts",
+                    "--region",
+                    "us-east-1",
+                    "--endpoint-url",
+                    self.endpoint,
+                    "--access-key-id",
+                    "minioadmin",
+                    "--secret-access-key",
+                    "minioadmin",
+                    "--prefix",
+                    "e2e",
+                    "--timestamp",
+                    "20260619T000000Z",
+                    "--upload",
+                    "--retries",
+                    "1",
+                    "--out-dir",
+                    str(root / "out"),
+                ]
+            )
+            result = publish_pr_artifact.publish(args)
+            self.assertIn(f"/artifacts/{result['objectKey']}", Store.objects)
+
+    def test_max_bytes_guard(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="publish-e2e-") as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "large.txt"
+            artifact.write_bytes(b"12345")
+            args = publish_pr_artifact.parse_args(
+                [
+                    "--repo",
+                    "red-wiz/aphrodite",
+                    "--pr",
+                    "205",
+                    "--file",
+                    str(artifact),
+                    "--label",
+                    "large",
+                    "--artifact-type",
+                    "artifact",
+                    "--visibility",
+                    "private",
+                    "--backend",
+                    "s3",
+                    "--bucket",
+                    "artifacts",
+                    "--max-bytes",
+                    "4",
+                    "--dry-run",
+                ]
+            )
+            with self.assertRaisesRegex(ValueError, "exceeding --max-bytes"):
+                publish_pr_artifact.publish(args)
 
     def test_private_comment_has_no_url(self) -> None:
         with tempfile.TemporaryDirectory(prefix="publish-e2e-") as tmp:
@@ -202,6 +338,64 @@ class PublishArtifactTests(unittest.TestCase):
                 ]
             )
             with self.assertRaisesRegex(ValueError, "defaults to private"):
+                publish_pr_artifact.publish(args)
+
+    def test_sensitive_filename_public_guard(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="publish-e2e-") as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / ".env"
+            artifact.write_text("TOKEN=secret\n", encoding="utf-8")
+            args = publish_pr_artifact.parse_args(
+                [
+                    "--repo",
+                    "red-wiz/aphrodite",
+                    "--pr",
+                    "205",
+                    "--file",
+                    str(artifact),
+                    "--label",
+                    "env",
+                    "--artifact-type",
+                    "screenshot",
+                    "--visibility",
+                    "public",
+                    "--backend",
+                    "s3",
+                    "--bucket",
+                    "artifacts",
+                    "--dry-run",
+                ]
+            )
+            with self.assertRaisesRegex(ValueError, "looks sensitive"):
+                publish_pr_artifact.publish(args)
+
+    def test_sensitive_content_public_guard(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="publish-e2e-") as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "notes.txt"
+            artifact.write_text("API_KEY=abcd1234secretvalue\n", encoding="utf-8")
+            args = publish_pr_artifact.parse_args(
+                [
+                    "--repo",
+                    "red-wiz/aphrodite",
+                    "--pr",
+                    "205",
+                    "--file",
+                    str(artifact),
+                    "--label",
+                    "notes",
+                    "--artifact-type",
+                    "artifact",
+                    "--visibility",
+                    "public",
+                    "--backend",
+                    "s3",
+                    "--bucket",
+                    "artifacts",
+                    "--dry-run",
+                ]
+            )
+            with self.assertRaisesRegex(ValueError, "content looks sensitive"):
                 publish_pr_artifact.publish(args)
 
 

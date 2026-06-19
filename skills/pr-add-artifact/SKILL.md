@@ -12,6 +12,7 @@ This skill is installed locally at `~/.codex/skills/pr-add-artifact`. That makes
 ## Components
 
 - `scripts/object_store.py`: dependency-free storage library with `s3` and `oci` backends.
+- `scripts/config_file.py`: dependency-free `.pr-artifacts.yaml` / `.pr-artifacts.json` config loader.
 - `scripts/oos_cli.py`: simple object-storage CLI for `put`, `ref`, `public-url`, and `presign-get`.
 - `scripts/publish_pr_artifact.py`: end-to-end artifact staging, manifest creation, upload, and PR comment upsert.
 - `scripts/test_publish_pr_artifact.py`: local S3-compatible E2E tests using a localhost mock server.
@@ -26,24 +27,26 @@ Choose visibility before uploading:
 
 When unsure, choose `private`.
 
+Public uploads run filename/path and lightweight text-content privacy checks for names or content such as `.env`, token, credential, secret, private key, and kubeconfig. Do not bypass this with `--allow-sensitive-public` unless the user explicitly accepts public exposure.
+
 ## Backends
 
 Prefer `--backend s3` for generic object storage. It works with S3-compatible services such as MinIO and RustFS using `--endpoint-url`, `--access-key-id`, and `--secret-access-key`.
 
 Use `--backend oci` when relying on OCI CLI auth such as `OCI_CLI_AUTH=instance_principal`. OCI still uses OCI-shaped references such as `oci://n/<namespace>/b/<bucket>/o/<key>`.
 
+If the target repo has `.pr-artifacts.yaml`, use it to avoid repeated storage flags. CLI/env values override config values. Config examples are in the source repo under `examples/`.
+
 ## Examples
 
 Dry-run public screenshot to S3-compatible storage:
 
 ```sh
-python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py \
+pr-add-screenshot \
   --repo red-wiz/aphrodite \
   --pr 205 \
   --file /path/to/screenshot.png \
   --label "JSON-LD screenshot" \
-  --artifact-type screenshot \
-  --visibility public \
   --backend s3 \
   --bucket pr-artifacts \
   --endpoint-url http://127.0.0.1:9000 \
@@ -57,13 +60,11 @@ Live private SBOM to OCI using instance principal:
 
 ```sh
 OCI_CLI_AUTH=instance_principal \
-python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py \
+pr-add-sbom \
   --repo red-wiz/aphrodite \
   --pr 205 \
   --file /path/to/sbom.json \
   --label "SBOM evidence" \
-  --artifact-type sbom \
-  --visibility private \
   --backend oci \
   --bucket red-wiz-codex-test-harness-artifacts \
   --namespace oabcs1 \
@@ -71,6 +72,12 @@ python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.
   --prefix aphrodite/sbom \
   --upload \
   --comment
+```
+
+When the package entrypoints are not installed, use the bundled script path:
+
+```sh
+python3 /Users/adross/.codex/skills/pr-add-artifact/scripts/publish_pr_artifact.py --help
 ```
 
 Use the lower-level object-storage CLI when no PR comment is needed:

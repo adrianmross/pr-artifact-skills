@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pr-artifact-skills"
+version = "0.1.2"
+description = "Publish pull request artifacts to S3-compatible or OCI object storage."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Adrian Ross" }
+]
+keywords = ["codex", "skills", "github", "pull-request", "artifacts", "s3", "oci", "minio", "rustfs"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Environment :: Console",
+  "Topic :: Software Development :: Build Tools"
+]
+
+[project.urls]
+Homepage = "https://github.com/adrianmross/pr-artifact-skills"
+Repository = "https://github.com/adrianmross/pr-artifact-skills"
+Issues = "https://github.com/adrianmross/pr-artifact-skills/issues"
+
+[project.scripts]
+pr-add-artifact = "pr_artifacts.publish_pr_artifact:cli"
+pr-add-screenshot = "pr_artifacts.publish_pr_artifact:cli_screenshot"
+pr-add-test-report = "pr_artifacts.publish_pr_artifact:cli_test_report"
+pr-add-sbom = "pr_artifacts.publish_pr_artifact:cli_sbom"
+oos = "pr_artifacts.oos_cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lib/python/pr_artifacts"]

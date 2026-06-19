@@ -13,6 +13,7 @@ import mimetypes
 import os
 import pathlib
 import subprocess
+import time
 import urllib.parse
 
 
@@ -28,6 +29,8 @@ class StorageConfig:
     secret_access_key: str = ""
     session_token: str = ""
     path_style: bool = True
+    timeout_seconds: int = 30
+    retries: int = 2
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -102,11 +105,26 @@ def run(argv: list[str], *, capture: bool = False) -> str:
 
 def upload_file(config: StorageConfig, file_path: pathlib.Path, key: str, content_type: str = "") -> None:
     media_type = content_type or content_type_for(file_path)
+    attempts = max(0, config.retries) + 1
+    errors: list[str] = []
+    for attempt in range(attempts):
+        try:
+            upload_file_once(config, file_path, key, media_type)
+            return
+        except Exception as error:
+            errors.append(str(error))
+            if attempt >= attempts - 1:
+                break
+            time.sleep(min(2**attempt, 8))
+    raise RuntimeError(f"upload failed after {attempts} attempt(s): {errors[-1]}")
+
+
+def upload_file_once(config: StorageConfig, file_path: pathlib.Path, key: str, content_type: str) -> None:
     if config.backend == "oci":
-        upload_file_oci(config, file_path, key, media_type)
+        upload_file_oci(config, file_path, key, content_type)
         return
     if config.backend == "s3":
-        upload_file_s3(config, file_path, key, media_type)
+        upload_file_s3(config, file_path, key, content_type)
         return
     raise ValueError(f"Unsupported storage backend: {config.backend}")
 
@@ -154,7 +172,7 @@ def upload_file_s3(config: StorageConfig, file_path: pathlib.Path, key: str, con
         headers["x-amz-security-token"] = config.session_token
     headers["authorization"] = s3_authorization(config, "PUT", key, "", headers, payload_hash, date_scope)
     connection_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
-    connection = connection_cls(parsed.netloc, timeout=30)
+    connection = connection_cls(parsed.netloc, timeout=config.timeout_seconds)
     target = parsed.path or "/"
     if parsed.query:
         target = f"{target}?{parsed.query}"
@@ -169,7 +187,10 @@ def upload_file_s3(config: StorageConfig, file_path: pathlib.Path, key: str, con
         response = connection.getresponse()
         body = response.read().decode("utf-8", "replace")
         if response.status not in {200, 201, 204}:
-            raise RuntimeError(f"S3 PUT {url} returned HTTP {response.status}: {body}")
+            hint = ""
+            if response.status in {403, 404}:
+                hint = " Check credentials, bucket existence, region, endpoint URL, and path-style settings."
+            raise RuntimeError(f"S3 PUT {url} returned HTTP {response.status}: {body}{hint}")
     finally:
         connection.close()
 
@@ -296,6 +317,8 @@ def config_from_args(args) -> StorageConfig:
         secret_access_key=getattr(args, "secret_access_key", "") or os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
         session_token=getattr(args, "session_token", "") or os.environ.get("AWS_SESSION_TOKEN", ""),
         path_style=not getattr(args, "virtual_hosted_style", False),
+        timeout_seconds=int(getattr(args, "timeout_seconds", 30) or 30),
+        retries=int(getattr(args, "retries", 2) or 0),
     )
 
 
