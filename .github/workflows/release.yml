@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.tag }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate
+        run: make test
+
+      - name: Package
+        run: ./scripts/package-release.sh "${{ steps.version.outputs.version }}"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.version }}" \
+            dist/pr-artifact-skills-${{ steps.version.outputs.version }}.tar.gz \
+            dist/pr-artifact-skills-${{ steps.version.outputs.version }}.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${{ steps.version.outputs.version }}" \
+            --notes-file dist/release-notes.md \
+            --verify-tag

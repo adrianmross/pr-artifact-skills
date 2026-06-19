@@ -1,0 +1,41 @@
+{
+  "name": "pr-artifact-skills",
+  "version": "0.1.0",
+  "description": "Codex skills for publishing local PR artifacts to S3-compatible or OCI object storage.",
+  "author": {
+    "name": "Adrian Ross",
+    "url": "https://github.com/adrianmross"
+  },
+  "homepage": "https://github.com/adrianmross/pr-artifact-skills",
+  "repository": "https://github.com/adrianmross/pr-artifact-skills",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "skills",
+    "github-pr",
+    "artifacts",
+    "s3",
+    "oci",
+    "minio",
+    "rustfs"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PR Artifact Skills",
+    "shortDescription": "Publish PR screenshots, reports, and SBOMs from agent runs.",
+    "longDescription": "Reusable Codex skills for uploading local pull request artifacts to S3-compatible storage, MinIO, RustFS, or OCI Object Storage with explicit public, signed, and private visibility modes.",
+    "developerName": "Adrian Ross",
+    "category": "Productivity",
+    "capabilities": [
+      "Write",
+      "Automation"
+    ],
+    "websiteURL": "https://github.com/adrianmross/pr-artifact-skills",
+    "defaultPrompt": [
+      "Publish this screenshot to the PR.",
+      "Attach this Playwright report to the PR.",
+      "Add this SBOM privately to the PR."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

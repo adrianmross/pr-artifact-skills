@@ -1,36 +1,38 @@
 # PR Artifact Skills
 
-Local and publishable skills for adding artifacts to GitHub pull requests.
+Codex skills for publishing local PR artifacts to object storage and adding the link or metadata to a GitHub pull request.
 
-## Skills
+![Demo](assets/demo.gif)
+
+## Install
+
+Install every skill:
+
+```sh
+npx skills add adrianmross/pr-artifact-skills --all -g
+```
+
+Install one skill:
+
+```sh
+npx skills add adrianmross/pr-artifact-skills --skill pr-add-screenshot -g -y
+```
+
+The repo is also a Codex plugin package. Clone it or download a release archive and install from the repo root containing `.codex-plugin/plugin.json`.
+
+## What It Provides
 
 - `pr-add-artifact`: generic artifact publisher.
 - `pr-add-screenshot`: screenshot/image defaults.
-- `pr-add-test-report`: test report and Playwright report defaults.
+- `pr-add-test-report`: test and Playwright report defaults.
 - `pr-add-sbom`: private SBOM/provenance defaults.
 
-## Backends
+Storage defaults to generic S3-compatible APIs for MinIO, RustFS, AWS S3, and similar services. OCI Object Storage is supported when OCI CLI auth is the right path.
 
-- `s3`: S3-compatible object storage such as MinIO, RustFS, AWS S3, and similar services.
-- `oci`: OCI Object Storage through the OCI CLI, including instance principal auth.
+Visibility is explicit: `public`, `signed`, or `private`. SBOMs, provenance, logs, and coverage stay private unless public publishing is intentionally overridden.
 
-## Local Test
+## Test
 
 ```sh
 make test
 ```
-
-The E2E test uses a local HTTP mock for S3-compatible signed PUTs and does not require live cloud credentials.
-
-## Install Locally
-
-Copy or sync each folder in `skills/` into `~/.codex/skills/`.
-
-```sh
-rsync -a skills/pr-add-artifact/ ~/.codex/skills/pr-add-artifact/
-rsync -a skills/pr-add-screenshot/ ~/.codex/skills/pr-add-screenshot/
-rsync -a skills/pr-add-test-report/ ~/.codex/skills/pr-add-test-report/
-rsync -a skills/pr-add-sbom/ ~/.codex/skills/pr-add-sbom/
-```
-
-To publish for other machines, push this repo and install skills with the Skills CLI once the repository is reachable.
