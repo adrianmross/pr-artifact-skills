@@ -34,6 +34,7 @@ Public uploads run filename/path and lightweight text-content privacy checks for
 Prefer `--backend s3` for generic object storage. It works with S3-compatible services such as MinIO and RustFS using `--endpoint-url`, `--access-key-id`, and `--secret-access-key`.
 
 Use `--backend oci` when relying on OCI CLI auth such as `OCI_CLI_AUTH=instance_principal`. OCI still uses OCI-shaped references such as `oci://n/<namespace>/b/<bucket>/o/<key>`.
+For a private OCI bucket, public or signed reviewer links must use an object-scoped PAR: pass `--create-oci-par` with `--upload`. The link expires after `--signed-ttl-hours` (24 hours by default); set a longer TTL when the review window requires it. Public OCI visibility without a configured public CDN URL now fails closed instead of returning a private object's unusable raw URL.
 
 If the target repo has `.pr-artifacts.yaml`, use it to avoid repeated storage flags. CLI/env values override config values. Config examples are in the source repo under `examples/`.
 

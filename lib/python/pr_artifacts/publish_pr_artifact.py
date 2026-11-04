@@ -213,6 +213,8 @@ def build_comment(args: argparse.Namespace, manifest: dict, display_url: str, ma
             lines.extend([f"![{args.label}]({display_url})", ""])
         else:
             lines.append(f"- URL: {display_url}")
+        if storage["backend"] == "oci" and args.create_oci_par and not storage.get("publicBaseUrl"):
+            lines.append(f"- OCI link expires after {args.signed_ttl_hours}h")
     elif args.visibility == "signed":
         lines.append(f"- Signed URL: {display_url}")
         lines.append(f"- Expires: {args.signed_expires or str(args.signed_ttl_hours) + 'h'}")
@@ -258,6 +260,14 @@ def gh_upsert_comment(repo: str, pr: str, marker: str, body_path: pathlib.Path) 
 
 def resolve_display_url(config: StorageConfig, args: argparse.Namespace, object_key: str, uploaded: bool) -> str:
     if args.visibility == "public":
+        if config.backend == "oci" and args.create_oci_par:
+            if args.dry_run:
+                return f"https://signed.example.invalid/{urllib.parse.quote(object_key)}"
+            if not uploaded:
+                raise ValueError("OCI PAR creation requires --upload")
+            return create_oci_par(config, args, object_key)
+        if config.backend == "oci" and not config.public_base_url:
+            raise ValueError("Public OCI artifacts require --create-oci-par for a private bucket")
         return public_url(config, object_key)
     if args.visibility != "signed":
         return ""
@@ -307,6 +317,7 @@ def publish(args: argparse.Namespace) -> dict:
             "namespace": config.namespace or None,
             "region": config.region or None,
             "endpointUrl": config.endpoint_url or None,
+            "publicBaseUrl": config.public_base_url or None,
             "prefix": args.prefix,
             "objectKey": object_key,
             "manifestObjectKey": manifest_key,
